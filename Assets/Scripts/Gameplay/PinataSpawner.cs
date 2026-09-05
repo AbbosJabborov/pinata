@@ -7,6 +7,7 @@ namespace Pinata.Gameplay
     {
         [Header("Spawn Settings")]
         [SerializeField] private PinataHealth pinataPrefab;
+        [SerializeField] private PinataHealth[] pinataVariants;
         [SerializeField] private Transform ceilingAnchor;
         [SerializeField] private float respawnDelay = 2.0f;
         [SerializeField] private float hangingDistance = 3.2f;
@@ -17,6 +18,8 @@ namespace Pinata.Gameplay
         private PinataHealth _currentPinata;
 
         public PinataRope Rope { get => rope; set => rope = value; }
+        public PinataHealth PinataPrefab { get => pinataPrefab; set => pinataPrefab = value; }
+        public PinataHealth[] PinataVariants { get => pinataVariants; set => pinataVariants = value; }
 
         private void Start()
         {
@@ -52,9 +55,15 @@ namespace Pinata.Gameplay
                 _currentPinata = null;
             }
 
-            if (pinataPrefab != null)
+            PinataHealth prefabToSpawn = pinataPrefab;
+            if (pinataVariants != null && pinataVariants.Length > 0)
             {
-                _currentPinata = Instantiate(pinataPrefab, spawnPos, Quaternion.identity, transform);
+                prefabToSpawn = pinataVariants[Random.Range(0, pinataVariants.Length)];
+            }
+
+            if (prefabToSpawn != null)
+            {
+                _currentPinata = Instantiate(prefabToSpawn, spawnPos, Quaternion.identity, transform);
                 _currentPinata.OnDestroyed += HandlePinataDestroyed;
                 SetupJointAndRope(_currentPinata);
             }
@@ -76,8 +85,8 @@ namespace Pinata.Gameplay
             }
 
             joint.connectedBody = anchorRb;
-            // The pivot is at the ceiling anchor above the pinata
-            joint.anchor = new Vector3(0, hangingDistance, 0);
+            // The pivot is at the ceiling anchor above the pinata (converted to local space)
+            joint.anchor = pinata.transform.InverseTransformPoint(ceilingAnchor.position);
             joint.autoConfigureConnectedAnchor = false;
             joint.connectedAnchor = Vector3.zero;
 
@@ -107,12 +116,12 @@ namespace Pinata.Gameplay
             zLimit.limit = 80f;
             joint.angularZLimit = zLimit;
 
-            // Restoration spring & damper
+            // Restoration spring & damper - tuned for heavy solid feel
             joint.rotationDriveMode = RotationDriveMode.Slerp;
             var slerp = joint.slerpDrive;
-            slerp.positionSpring = 45f;
-            slerp.positionDamper = 3.2f;
-            slerp.maximumForce = 500f;
+            slerp.positionSpring = 85f;
+            slerp.positionDamper = 6.5f;
+            slerp.maximumForce = 1200f;
             joint.slerpDrive = slerp;
 
             // Connect dynamic visual rope

@@ -8,8 +8,8 @@ PhysicsMaterial:
   m_PrefabAsset: {fileID: 0}
   m_Name: PhysMat_Candy
   serializedVersion: 2
-  m_DynamicFriction: 0.2
-  m_StaticFriction: 0.2
-  m_Bounciness: 0.75
-  m_FrictionCombine: 2
-  m_BounceCombine: 3
+  m_DynamicFriction: 0.85
+  m_StaticFriction: 0.85
+  m_Bounciness: 0.04
+  m_FrictionCombine: 3
+  m_BounceCombine: 2

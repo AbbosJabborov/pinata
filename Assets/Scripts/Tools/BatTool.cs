@@ -5,18 +5,18 @@ using UnityEngine.InputSystem;
 
 namespace Pinata.Tools
 {
-    public class BatTool : MonoBehaviour
+    public class BatTool : MonoBehaviour, ITool
     {
         [Header("Combat Stats")]
         [SerializeField] private float damage = 25f;
         [SerializeField] private float reachDistance = 2.8f;
         [SerializeField] private float hitRadius = 0.45f;
-        [SerializeField] private float impulseForce = 12f;
+        [SerializeField] private float impulseForce = 14f;
         [SerializeField] private float swingCooldown = 0.38f;
 
         [Header("Animation Settings")]
         [SerializeField] private Transform batModel;
-        [SerializeField] private Vector3 idleLocalPos = new Vector3(0.35f, -0.35f, 0.60f);
+        [SerializeField] private Vector3 idleLocalPos = new Vector3(0.35f, -0.32f, 0.58f);
         [SerializeField] private Vector3 idleLocalRot = new Vector3(60f, -25f, -30f);
 
         [Header("Audio")]
@@ -27,8 +27,35 @@ namespace Pinata.Tools
         private bool _isSwinging = false;
         private float _lastSwingTime = -10f;
 
+        public string ToolName => "Bat";
+        public int SlotIndex => 0;
+        public bool IsBusy => _isSwinging;
+
         public float Damage { get => damage; set => damage = value; }
         public float ImpulseForce { get => impulseForce; set => impulseForce = value; }
+
+        public void OnEquip()
+        {
+            gameObject.SetActive(true);
+            _isSwinging = false;
+            if (batModel != null)
+            {
+                batModel.localPosition = idleLocalPos;
+                batModel.localEulerAngles = idleLocalRot;
+            }
+        }
+
+        public void OnUnequip()
+        {
+            StopAllCoroutines();
+            _isSwinging = false;
+            if (batModel != null)
+            {
+                batModel.localPosition = idleLocalPos;
+                batModel.localEulerAngles = idleLocalRot;
+            }
+            gameObject.SetActive(false);
+        }
 
         private void Awake()
         {

@@ -2,6 +2,7 @@ using UnityEngine;
 
 namespace Pinata.Gameplay
 {
+    [ExecuteAlways]
     [RequireComponent(typeof(LineRenderer))]
     public class PinataRope : MonoBehaviour
     {
@@ -13,7 +14,7 @@ namespace Pinata.Gameplay
 
         private LineRenderer _lineRenderer;
 
-        private void Awake()
+        private void OnEnable()
         {
             _lineRenderer = GetComponent<LineRenderer>();
             if (_lineRenderer != null)
@@ -24,6 +25,11 @@ namespace Pinata.Gameplay
                 _lineRenderer.endWidth = 0.04f;
                 _lineRenderer.widthMultiplier = 1.0f;
             }
+        }
+
+        private void Awake()
+        {
+            OnEnable();
         }
 
         public void SetAnchors(Transform top, Transform bottom)

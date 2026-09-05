@@ -37,6 +37,7 @@ namespace Pinata.Gameplay
         private bool _isDead = false;
         private AudioSource _audioSource;
         private Color[] _originalColors;
+        private MeshDeformer[] _deformers;
 
         public event Action<float, float> OnHealthChanged; // current, max
         public event Action OnDestroyed;
@@ -56,6 +57,8 @@ namespace Pinata.Gameplay
             {
                 targetRenderers = GetComponentsInChildren<Renderer>();
             }
+
+            _deformers = GetComponentsInChildren<MeshDeformer>();
 
             CacheOriginalColors();
             currentHealth = maxHealth;
@@ -85,6 +88,18 @@ namespace Pinata.Gameplay
             if (_rb != null)
             {
                 _rb.AddForceAtPosition(hitDirection * impulseForce, hitPoint, ForceMode.Impulse);
+            }
+
+            // Mesh Deformation based on strike force and impact location
+            if (_deformers != null && _deformers.Length > 0)
+            {
+                for (int i = 0; i < _deformers.Length; i++)
+                {
+                    if (_deformers[i] != null && _deformers[i].gameObject.activeInHierarchy)
+                    {
+                        _deformers[i].Deform(hitPoint, hitDirection * impulseForce, radius: 0.65f, forceScale: 0.035f);
+                    }
+                }
             }
 
             // Juice: Camera shake & Hitstop
@@ -166,6 +181,9 @@ namespace Pinata.Gameplay
                 Destroy(ps.gameObject, 2.5f);
             }
 
+            // Slice body mesh in half with real-time mesh cutting!
+            SliceBodyOnDeath();
+
             // Fling ragdoll limbs as physical cardboard gibs!
             DetachRagdollGibs();
 
@@ -174,14 +192,39 @@ namespace Pinata.Gameplay
 
             OnDestroyed?.Invoke();
 
-            // Disable main collider and hide root
-            var col = GetComponent<Collider>();
-            if (col != null) col.enabled = false;
-            if (_rb != null) _rb.isKinematic = true;
+            // Disable all child renderers & colliders immediately so NOTHING hovers in the air
+            foreach (var rend in GetComponentsInChildren<Renderer>())
+            {
+                if (rend != null) rend.enabled = false;
+            }
+            foreach (var col in GetComponentsInChildren<Collider>())
+            {
+                if (col != null) col.enabled = false;
+            }
 
-            var r = GetComponent<Renderer>();
-            if (r != null) r.enabled = false;
-            StartCoroutine(ShrinkAndDestroyGib(gameObject, 4.0f));
+            Destroy(gameObject, 0.05f);
+        }
+
+        private void SliceBodyOnDeath()
+        {
+            MeshFilter mf = GetComponentInChildren<MeshFilter>();
+            if (mf != null)
+            {
+                var result = MeshCutter.Cut(mf.gameObject, mf.transform.position, Vector3.right);
+                if (result.success)
+                {
+                    if (result.pieceA != null)
+                    {
+                        var rb = result.pieceA.GetComponent<Rigidbody>();
+                        if (rb != null) rb.AddExplosionForce(explosionForce * 2.5f, transform.position, explosionRadius, 0.5f, ForceMode.Impulse);
+                    }
+                    if (result.pieceB != null)
+                    {
+                        var rb = result.pieceB.GetComponent<Rigidbody>();
+                        if (rb != null) rb.AddExplosionForce(explosionForce * 2.5f, transform.position, explosionRadius, 0.5f, ForceMode.Impulse);
+                    }
+                }
+            }
         }
 
         private void DetachRagdollGibs()
@@ -225,6 +268,16 @@ namespace Pinata.Gameplay
             if (gib != null) Destroy(gib);
         }
 
+        private static readonly CandyType[] AvailableCandyTypes = new[]
+        {
+            CandyType.Blue,
+            CandyType.Green,
+            CandyType.Orange,
+            CandyType.Pink,
+            CandyType.Purple,
+            CandyType.Yellow
+        };
+
         private void SpawnEruptedCandies()
         {
             int candyCount = UnityEngine.Random.Range(minCandyCount, maxCandyCount + 1);
@@ -232,12 +285,7 @@ namespace Pinata.Gameplay
 
             for (int i = 0; i < candyCount; i++)
             {
-                // Weighted candy distribution
-                // 65% Mint, 25% Chocolate, 10% Golden Truffle
-                float roll = UnityEngine.Random.value;
-                CandyType type = CandyType.Mint;
-                if (roll > 0.90f) type = CandyType.Truffle;
-                else if (roll > 0.65f) type = CandyType.Chocolate;
+                CandyType type = AvailableCandyTypes[UnityEngine.Random.Range(0, AvailableCandyTypes.Length)];
 
                 Vector3 spawnPos = center + UnityEngine.Random.insideUnitSphere * 0.4f;
                 Quaternion rot = UnityEngine.Random.rotation;
@@ -264,6 +312,15 @@ namespace Pinata.Gameplay
                 _rb.linearVelocity = Vector3.zero;
                 _rb.angularVelocity = Vector3.zero;
             }
+
+            if (_deformers != null)
+            {
+                for (int i = 0; i < _deformers.Length; i++)
+                {
+                    if (_deformers[i] != null) _deformers[i].ResetDeformation();
+                }
+            }
+
             gameObject.SetActive(true);
             OnHealthChanged?.Invoke(currentHealth, maxHealth);
         }

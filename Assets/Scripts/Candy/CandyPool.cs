@@ -100,5 +100,7 @@ namespace Pinata.Candy
                 _pools[item.Type] = newQueue;
             }
         }
+
+        public void ReturnCandy(CandyItem item) => Despawn(item);
     }
 }
