@@ -64,8 +64,11 @@ namespace Pinata.Tools
             gameObject.SetActive(false);
         }
 
+        public static VacuumTool Instance { get; private set; }
+
         private void Awake()
         {
+            if (Instance == null) Instance = this;
             _mainCamera = Camera.main;
 
             if (loopAudioSource == null)

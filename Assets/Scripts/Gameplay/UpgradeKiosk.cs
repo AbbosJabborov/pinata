@@ -1,34 +1,39 @@
 using System;
-using Pinata.Player;
+using Pinata.Interaction;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
 namespace Pinata.Gameplay
 {
-    public class UpgradeKiosk : MonoBehaviour
+    /// <summary>
+    /// Upgrade terminal. Opens/closes purely through the IInteractable + PlayerInteractor
+    /// raycast flow (no separate proximity trigger) so there's a single source of truth
+    /// for "is the player interacting with this".
+    /// </summary>
+    public class UpgradeKiosk : MonoBehaviour, IInteractable
     {
-        [Header("Interaction Settings")]
-        [SerializeField] private float interactionRadius = 2.8f;
+        public static UpgradeKiosk Instance { get; private set; }
 
-        private bool _isPlayerNear = false;
         private bool _isOpen = false;
 
-        public bool IsPlayerNear => _isPlayerNear;
         public bool IsOpen => _isOpen;
 
         public event Action<bool> OnKioskStateChanged; // (isOpen)
 
+        private void Awake()
+        {
+            if (Instance == null) Instance = this;
+            else if (Instance != this) Destroy(gameObject);
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this) Instance = null;
+        }
+
         private void Update()
         {
-            if (_isPlayerNear)
-            {
-                if (Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame)
-                {
-                    ToggleKiosk();
-                }
-            }
-
-            if (_isOpen && Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
+            if (_isOpen && !Pinata.UI.PauseMenu.IsPaused && Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
             {
                 CloseKiosk();
             }
@@ -43,37 +48,50 @@ namespace Pinata.Gameplay
         public void OpenKiosk()
         {
             _isOpen = true;
-            Cursor.lockState = CursorLockMode.None;
-            Cursor.visible = true;
+            Pinata.Core.CursorModeManager.RequestUnlock(this);
             OnKioskStateChanged?.Invoke(true);
         }
 
         public void CloseKiosk()
         {
             _isOpen = false;
-            Cursor.lockState = CursorLockMode.Locked;
-            Cursor.visible = false;
+            Pinata.Core.CursorModeManager.ReleaseUnlock(this);
             OnKioskStateChanged?.Invoke(false);
         }
 
-        private void OnTriggerEnter(Collider other)
+        private void OnDisable()
         {
-            if (other.CompareTag("Player") || other.GetComponentInParent<FirstPersonPlayer>() != null)
+            if (_isOpen)
             {
-                _isPlayerNear = true;
+                _isOpen = false;
+                Pinata.Core.CursorModeManager.ReleaseUnlock(this);
+                OnKioskStateChanged?.Invoke(false);
             }
         }
 
-        private void OnTriggerExit(Collider other)
+        #region IInteractable Implementation
+        public string InteractableName => "Upgrade Terminal";
+
+        public System.Collections.Generic.List<InputPrompt> GetPrompts
         {
-            if (other.CompareTag("Player") || other.GetComponentInParent<FirstPersonPlayer>() != null)
+            get
             {
-                _isPlayerNear = false;
-                if (_isOpen)
+                return new System.Collections.Generic.List<InputPrompt>
                 {
-                    CloseKiosk();
-                }
+                    new InputPrompt(InputPrompt.IconType.KeyE, _isOpen ? "Close Terminal" : "Open Upgrades")
+                };
             }
         }
+
+        public float HoldDuration => 0f;
+
+        public void OnInteractStart(PlayerInteractor interactor) { }
+        public void OnInteractCanceled(PlayerInteractor interactor) { }
+
+        public void OnInteractComplete(PlayerInteractor interactor)
+        {
+            ToggleKiosk();
+        }
+        #endregion
     }
 }

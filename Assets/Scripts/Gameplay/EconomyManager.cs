@@ -1,10 +1,15 @@
 using System;
+using Pinata.Packaging;
 using Pinata.Player;
 using Pinata.Tools;
 using UnityEngine;
 
 namespace Pinata.Gameplay
 {
+    /// <summary>
+    /// Central economy + progression tracker for the MVP loop:
+    /// cash -> box tier -> tool unlocks (Broom -> Windblower -> Vacuum) -> hopper/vacuum stats -> payout multiplier.
+    /// </summary>
     public class EconomyManager : MonoBehaviour
     {
         public static EconomyManager Instance { get; private set; }
@@ -12,13 +17,19 @@ namespace Pinata.Gameplay
         [Header("Starting Funds")]
         [SerializeField] private int initialCash = 0;
 
+        [Header("Direct Scene Links (Optional)")]
+        [SerializeField] private CardboardBox cardboardBox;
+        [SerializeField] private VacuumTool vacuumTool;
+        [SerializeField] private ToolManager toolManager;
+
         private int _cash = 0;
 
         // Upgrade Levels (1-indexed)
-        public int BackpackLevel { get; private set; } = 1;
-        public int BatLevel { get; private set; } = 1;
-        public int VacuumLevel { get; private set; } = 1;
+        public int BoxTierLevel { get; private set; } = 1;
+        public int HopperLevel { get; private set; } = 1;      // PlayerInventory capacity (vacuum hopper)
+        public int VacuumLevel { get; private set; } = 1;      // Vacuum reach/force
         public int ValueMultiplierLevel { get; private set; } = 1;
+        public int ToolUnlockCount { get; private set; } = 1;  // 1 = Hand only, 2 = +Broom, 3 = +Windblower, 4 = +Vacuum
 
         public int Cash => _cash;
 
@@ -27,11 +38,12 @@ namespace Pinata.Gameplay
 
         private void Awake()
         {
-            if (Instance == null)
-            {
-                Instance = this;
-            }
+            if (Instance == null) Instance = this;
             _cash = initialCash;
+
+            if (cardboardBox == null) cardboardBox = CardboardBox.Instance;
+            if (vacuumTool == null) vacuumTool = VacuumTool.Instance;
+            if (toolManager == null) toolManager = ToolManager.Instance;
         }
 
         private void Start()
@@ -57,64 +69,85 @@ namespace Pinata.Gameplay
             return true;
         }
 
-        // --- Backpack Upgrades ---
-        public static readonly int[] BackpackCapacities = { 30, 60, 120, 250, 500 };
-        public static readonly int[] BackpackCosts = { 75, 200, 500, 1200 };
+        // --- Box Tier Upgrades (bounce + scale, matches CardboardBox.UpgradeLevel) ---
+        public static readonly int[] BoxTierCosts = { 80, 220, 550, 1300 };
 
-        public int GetBackpackUpgradeCost()
+        public int GetBoxTierUpgradeCost()
         {
-            if (BackpackLevel > BackpackCosts.Length) return -1; // Maxed
-            return BackpackCosts[BackpackLevel - 1];
+            if (BoxTierLevel > BoxTierCosts.Length) return -1; // Maxed
+            return BoxTierCosts[BoxTierLevel - 1];
         }
 
-        public bool TryUpgradeBackpack()
+        public bool TryUpgradeBoxTier()
         {
-            int cost = GetBackpackUpgradeCost();
+            int cost = GetBoxTierUpgradeCost();
             if (cost < 0 || !TrySpendCash(cost)) return false;
 
-            BackpackLevel++;
-            ApplyBackpackUpgrade();
-            OnUpgradePurchased?.Invoke("Backpack", BackpackLevel);
+            BoxTierLevel++;
+            if (cardboardBox == null) cardboardBox = CardboardBox.Instance;
+            cardboardBox?.UpgradeLevel();
+            OnUpgradePurchased?.Invoke("BoxTier", BoxTierLevel);
             return true;
         }
 
-        private void ApplyBackpackUpgrade()
+        // --- Tool Unlocks (sequential: Hand -> Broom -> Bat) ---
+        // 3-slot loadout for now (Hand is always free/equipped). Windblower and Vacuum
+        // are parked in Tools/Future until the roster grows past 3 and a proper
+        // loadout-selection screen exists to let the player choose which to bring.
+        public static readonly string[] ToolUnlockNames = { "Broom", "Bat" };
+        public static readonly int[] ToolUnlockCosts = { 60, 180 };
+
+        public int GetToolUnlockCost()
+        {
+            if (ToolUnlockCount > ToolUnlockCosts.Length) return -1; // All unlocked
+            return ToolUnlockCosts[ToolUnlockCount - 1];
+        }
+
+        public string GetNextToolName()
+        {
+            if (ToolUnlockCount > ToolUnlockNames.Length) return null;
+            return ToolUnlockNames[ToolUnlockCount - 1];
+        }
+
+        public bool TryUnlockNextTool()
+        {
+            int cost = GetToolUnlockCost();
+            if (cost < 0 || !TrySpendCash(cost)) return false;
+
+            ToolUnlockCount++;
+            if (toolManager == null) toolManager = ToolManager.Instance;
+            toolManager?.SetUnlockedCount(ToolUnlockCount);
+            OnUpgradePurchased?.Invoke("ToolUnlock", ToolUnlockCount);
+            return true;
+        }
+
+        // --- Hopper Capacity Upgrades (PlayerInventory.MaxCapacity) ---
+        public static readonly int[] HopperCapacities = { 30, 60, 120, 250, 500 };
+        public static readonly int[] HopperCosts = { 75, 200, 500, 1200 };
+
+        public int GetHopperUpgradeCost()
+        {
+            if (HopperLevel > HopperCosts.Length) return -1;
+            return HopperCosts[HopperLevel - 1];
+        }
+
+        public bool TryUpgradeHopper()
+        {
+            int cost = GetHopperUpgradeCost();
+            if (cost < 0 || !TrySpendCash(cost)) return false;
+
+            HopperLevel++;
+            ApplyHopperUpgrade();
+            OnUpgradePurchased?.Invoke("Hopper", HopperLevel);
+            return true;
+        }
+
+        private void ApplyHopperUpgrade()
         {
             if (PlayerInventory.Instance != null)
             {
-                int capIndex = Mathf.Clamp(BackpackLevel - 1, 0, BackpackCapacities.Length - 1);
-                PlayerInventory.Instance.MaxCapacity = BackpackCapacities[capIndex];
-            }
-        }
-
-        // --- Bat Upgrades ---
-        public static readonly float[] BatDamages = { 25f, 45f, 75f, 125f, 200f };
-        public static readonly int[] BatCosts = { 50, 150, 400, 1000 };
-
-        public int GetBatUpgradeCost()
-        {
-            if (BatLevel > BatCosts.Length) return -1;
-            return BatCosts[BatLevel - 1];
-        }
-
-        public bool TryUpgradeBat()
-        {
-            int cost = GetBatUpgradeCost();
-            if (cost < 0 || !TrySpendCash(cost)) return false;
-
-            BatLevel++;
-            ApplyBatUpgrade();
-            OnUpgradePurchased?.Invoke("Bat", BatLevel);
-            return true;
-        }
-
-        private void ApplyBatUpgrade()
-        {
-            var bat = FindAnyObjectByType<BatTool>();
-            if (bat != null)
-            {
-                int idx = Mathf.Clamp(BatLevel - 1, 0, BatDamages.Length - 1);
-                bat.Damage = BatDamages[idx];
+                int capIndex = Mathf.Clamp(HopperLevel - 1, 0, HopperCapacities.Length - 1);
+                PlayerInventory.Instance.MaxCapacity = HopperCapacities[capIndex];
             }
         }
 
@@ -142,7 +175,7 @@ namespace Pinata.Gameplay
 
         private void ApplyVacuumUpgrade()
         {
-            var vac = FindAnyObjectByType<VacuumTool>();
+            var vac = vacuumTool != null ? vacuumTool : VacuumTool.Instance;
             if (vac != null)
             {
                 int idx = Mathf.Clamp(VacuumLevel - 1, 0, VacuumReaches.Length - 1);
@@ -182,9 +215,10 @@ namespace Pinata.Gameplay
 
         public void ApplyAllUpgrades()
         {
-            ApplyBackpackUpgrade();
-            ApplyBatUpgrade();
+            ApplyHopperUpgrade();
             ApplyVacuumUpgrade();
+            if (toolManager == null) toolManager = ToolManager.Instance;
+            toolManager?.SetUnlockedCount(ToolUnlockCount);
         }
     }
 }

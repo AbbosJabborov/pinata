@@ -21,14 +21,30 @@ namespace Pinata.Tools
         private int _currentSlot = 0;
         private bool _isSwitching = false;
         private Vector3 _originalSocketPos;
+        private int _unlockedCount = 1; // Slot 0 (Hand) is always unlocked
 
         public event Action<int, string> OnToolChanged;
+        public event Action<int> OnUnlockedCountChanged;
 
         public int CurrentSlot => _currentSlot;
+        public int UnlockedCount => _unlockedCount;
         public ITool CurrentTool => (_currentSlot >= 0 && _currentSlot < _tools.Count) ? _tools[_currentSlot] : null;
+
+        /// <summary>Called by EconomyManager when a new tool tier is purchased.</summary>
+        public void SetUnlockedCount(int count)
+        {
+            _unlockedCount = Mathf.Clamp(count, 1, _tools.Count);
+            OnUnlockedCountChanged?.Invoke(_unlockedCount);
+        }
+
+        public bool IsSlotUnlocked(int slotIndex) => slotIndex >= 0 && slotIndex < _unlockedCount;
+
+        public static ToolManager Instance { get; private set; }
 
         private void Awake()
         {
+            if (Instance == null) Instance = this;
+
             if (toolSocket == null)
             {
                 toolSocket = transform;
@@ -123,14 +139,14 @@ namespace Pinata.Tools
                 float scroll = Mouse.current.scroll.ReadValue().y;
                 if (scroll > 0.5f)
                 {
-                    // Scroll up: previous tool
-                    int prev = (_currentSlot - 1 + _tools.Count) % _tools.Count;
+                    // Scroll up: previous unlocked tool
+                    int prev = (_currentSlot - 1 + _unlockedCount) % _unlockedCount;
                     SelectSlot(prev);
                 }
                 else if (scroll < -0.5f)
                 {
-                    // Scroll down: next tool
-                    int next = (_currentSlot + 1) % _tools.Count;
+                    // Scroll down: next unlocked tool
+                    int next = (_currentSlot + 1) % _unlockedCount;
                     SelectSlot(next);
                 }
             }
@@ -139,6 +155,7 @@ namespace Pinata.Tools
         public void SelectSlot(int slotIndex)
         {
             if (slotIndex < 0 || slotIndex >= _tools.Count || slotIndex == _currentSlot || _isSwitching) return;
+            if (!IsSlotUnlocked(slotIndex)) return;
 
             // If current tool is in middle of an action, check if it can be interrupted
             if (_tools[_currentSlot].IsBusy) return;

@@ -1,5 +1,6 @@
 using System;
 using Pinata.Candy;
+using Pinata.Gameplay;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -14,16 +15,25 @@ namespace Pinata.Tools
         [SerializeField] private Transform holdSocket;
         [SerializeField] private Vector3 holdLocalPos = new Vector3(0.18f, -0.22f, 0.65f);
 
+        [Header("Combat Settings (Punch)")]
+        [SerializeField] private float punchDamage = 10f;
+        [SerializeField] private float punchReach = 2.8f;
+        [SerializeField] private float punchForce = 6f;
+        [SerializeField] private float punchCooldown = 0.35f;
+
         [Header("Audio")]
         [SerializeField] private AudioClip grabSound;
         [SerializeField] private AudioClip throwSound;
+        [SerializeField] private AudioClip punchSound;
         [SerializeField] private AudioSource audioSource;
 
         private Camera _mainCamera;
         private CandyItem _hoveredCandy;
+        private PinataHealth _hoveredPinata;
         private CandyItem _heldCandy;
         private Transform _heldOriginalParent;
         private bool _heldOriginalKinematic;
+        private float _lastPunchTime = -10f;
 
         public event Action<string> OnPromptChanged;
 
@@ -46,12 +56,16 @@ namespace Pinata.Tools
                 DropCandy();
             }
             _hoveredCandy = null;
+            _hoveredPinata = null;
             OnPromptChanged?.Invoke(string.Empty);
             gameObject.SetActive(false);
         }
 
+        public static HandsTool Instance { get; private set; }
+
         private void Awake()
         {
+            if (Instance == null) Instance = this;
             _mainCamera = Camera.main;
             if (audioSource == null)
             {
@@ -77,9 +91,16 @@ namespace Pinata.Tools
             {
                 CheckHover();
 
-                if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame && _hoveredCandy != null)
+                if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
                 {
-                    PickUpCandy(_hoveredCandy);
+                    if (_hoveredCandy != null)
+                    {
+                        PickUpCandy(_hoveredCandy);
+                    }
+                    else
+                    {
+                        Punch();
+                    }
                 }
             }
             else
@@ -110,6 +131,7 @@ namespace Pinata.Tools
             if (_mainCamera == null) return;
 
             Ray ray = _mainCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
+            // 1. Check for candy pickup first
             if (Physics.Raycast(ray, out RaycastHit hit, maxPickupDistance))
             {
                 var candy = hit.collider.GetComponentInParent<CandyItem>();
@@ -118,16 +140,65 @@ namespace Pinata.Tools
                     if (_hoveredCandy != candy)
                     {
                         _hoveredCandy = candy;
+                        _hoveredPinata = null;
                         UpdatePrompt();
                     }
                     return;
                 }
             }
 
-            if (_hoveredCandy != null)
+            // 2. Check for piñata to punch
+            if (Physics.SphereCast(ray, 0.35f, out RaycastHit pinataHit, punchReach))
+            {
+                var pinata = pinataHit.collider.GetComponentInParent<PinataHealth>();
+                if (pinata != null && !pinata.IsDead)
+                {
+                    if (_hoveredPinata != pinata)
+                    {
+                        _hoveredPinata = pinata;
+                        _hoveredCandy = null;
+                        UpdatePrompt();
+                    }
+                    return;
+                }
+            }
+
+            if (_hoveredCandy != null || _hoveredPinata != null)
             {
                 _hoveredCandy = null;
+                _hoveredPinata = null;
                 UpdatePrompt();
+            }
+        }
+
+        public void Punch()
+        {
+            if (Time.time < _lastPunchTime + punchCooldown) return;
+            _lastPunchTime = Time.time;
+
+            if (_mainCamera == null) _mainCamera = Camera.main;
+            if (_mainCamera == null) return;
+
+            Ray ray = _mainCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
+            if (Physics.SphereCast(ray, 0.4f, out RaycastHit hit, punchReach))
+            {
+                var pinata = hit.collider.GetComponentInParent<PinataHealth>();
+                if (pinata != null && !pinata.IsDead)
+                {
+                    Vector3 forceDir = (hit.point - _mainCamera.transform.position).normalized;
+                    pinata.TakeDamage(punchDamage, hit.point, forceDir, punchForce);
+
+                    if (punchSound != null && audioSource != null)
+                    {
+                        audioSource.pitch = UnityEngine.Random.Range(0.95f, 1.15f);
+                        audioSource.PlayOneShot(punchSound, 0.8f);
+                    }
+                    else if (grabSound != null && audioSource != null)
+                    {
+                        audioSource.pitch = UnityEngine.Random.Range(0.85f, 1.05f);
+                        audioSource.PlayOneShot(grabSound, 0.9f);
+                    }
+                }
             }
         }
 
@@ -141,6 +212,9 @@ namespace Pinata.Tools
             var rb = _heldCandy.Rigidbody;
             _heldOriginalKinematic = rb.isKinematic;
             rb.isKinematic = true;
+
+            var col = _heldCandy.GetComponent<Collider>();
+            if (col != null) col.enabled = false;
 
             if (grabSound != null && audioSource != null)
             {
@@ -157,6 +231,9 @@ namespace Pinata.Tools
 
             var candy = _heldCandy;
             _heldCandy = null;
+
+            var col = candy.GetComponent<Collider>();
+            if (col != null) col.enabled = true;
 
             if (_mainCamera == null) _mainCamera = Camera.main;
             Vector3 throwDir = _mainCamera != null ? _mainCamera.transform.forward : transform.forward;
@@ -187,6 +264,9 @@ namespace Pinata.Tools
             var candy = _heldCandy;
             _heldCandy = null;
 
+            var col = candy.GetComponent<Collider>();
+            if (col != null) col.enabled = true;
+
             var rb = candy.Rigidbody;
             if (rb != null)
             {
@@ -209,6 +289,10 @@ namespace Pinata.Tools
             else if (_hoveredCandy != null)
             {
                 OnPromptChanged?.Invoke($"[LMB] Pick up {_hoveredCandy.Type}");
+            }
+            else if (_hoveredPinata != null)
+            {
+                OnPromptChanged?.Invoke("[LMB] Punch Piñata");
             }
             else
             {

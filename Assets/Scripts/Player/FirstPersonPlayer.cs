@@ -1,3 +1,4 @@
+using Pinata.Core;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -26,21 +27,38 @@ namespace Pinata.Player
         private Vector3 _velocity;
         private bool _isGrounded;
 
+        public static FirstPersonPlayer Instance { get; private set; }
+
         public Transform CameraHolder => cameraHolder;
         public Transform ToolSocket => toolSocket;
+        public CharacterController Controller => _controller;
 
         private void Awake()
         {
+            if (Instance == null) Instance = this;
+
             _controller = GetComponent<CharacterController>();
             if (cameraHolder == null && Camera.main != null)
             {
                 cameraHolder = Camera.main.transform;
+            }
+
+            int playerLayer = LayerMask.NameToLayer("Player");
+            int candyLayer = LayerMask.NameToLayer("Candy");
+            if (playerLayer != -1)
+            {
+                if (gameObject.layer == 0) gameObject.layer = playerLayer;
+            }
+            if (playerLayer != -1 && candyLayer != -1)
+            {
+                Physics.IgnoreLayerCollision(playerLayer, candyLayer, true);
             }
         }
 
         private void Start()
         {
             LockCursor(true);
+            Pinata.UI.Menu.GameSettings.ApplyCameraFOV();
         }
 
         private void Update()
@@ -71,15 +89,17 @@ namespace Pinata.Player
 
         private void HandleLook()
         {
-            if (Cursor.lockState != CursorLockMode.Locked || Mouse.current == null) return;
+            if (CursorModeManager.IsUnlocked || Mouse.current == null) return;
 
-            Vector2 mouseDelta = Mouse.current.delta.ReadValue() * mouseSensitivity;
+            float sens = Pinata.UI.Menu.GameSettings.MouseSensitivity;
+            Vector2 mouseDelta = Mouse.current.delta.ReadValue() * sens;
 
             // Yaw (horizontal) rotates character body
             transform.Rotate(Vector3.up * mouseDelta.x);
 
-            // Pitch (vertical) rotates camera holder
-            _pitch -= mouseDelta.y;
+            // Pitch (vertical) rotates camera holder (respecting invert Y)
+            float pitchDelta = Pinata.UI.Menu.GameSettings.InvertY ? mouseDelta.y : -mouseDelta.y;
+            _pitch += pitchDelta;
             _pitch = Mathf.Clamp(_pitch, minPitch, maxPitch);
 
             if (cameraHolder != null)
@@ -90,6 +110,8 @@ namespace Pinata.Player
 
         private void HandleMovement()
         {
+            if (CursorModeManager.IsUnlocked) return;
+
             _isGrounded = _controller.isGrounded;
             if (_isGrounded && _velocity.y < 0)
             {

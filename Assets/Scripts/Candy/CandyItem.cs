@@ -1,4 +1,5 @@
 using System.Collections;
+using Pinata.Player;
 using UnityEngine;
 
 namespace Pinata.Candy
@@ -32,6 +33,19 @@ namespace Pinata.Candy
             {
                 originalScale = transform.localScale;
             }
+
+            int candyLayer = LayerMask.NameToLayer("Candy");
+            if (candyLayer != -1 && gameObject.layer == 0) gameObject.layer = candyLayer;
+
+            IgnorePlayerCollision();
+        }
+
+        private void IgnorePlayerCollision()
+        {
+            if (_col != null && FirstPersonPlayer.Instance != null && FirstPersonPlayer.Instance.Controller != null)
+            {
+                Physics.IgnoreCollision(_col, FirstPersonPlayer.Instance.Controller, true);
+            }
         }
 
         private void Update()
@@ -39,7 +53,7 @@ namespace Pinata.Candy
             if (transform.position.y < -0.5f && !_isBeingCollected)
             {
                 transform.position = new Vector3(transform.position.x, 0.2f, transform.position.z);
-                if (_rb != null)
+                if (_rb != null && !_rb.isKinematic)
                 {
                     _rb.linearVelocity = new Vector3(_rb.linearVelocity.x * 0.5f, 1.5f, _rb.linearVelocity.z * 0.5f);
                 }
@@ -72,14 +86,15 @@ namespace Pinata.Candy
             transform.localScale = originalScale;
             if (_rb != null)
             {
+                _rb.isKinematic = false;
                 _rb.linearVelocity = Vector3.zero;
                 _rb.angularVelocity = Vector3.zero;
-                _rb.isKinematic = false;
                 _rb.useGravity = true;
             }
             if (_col != null)
             {
                 _col.enabled = true;
+                IgnorePlayerCollision();
             }
         }
 

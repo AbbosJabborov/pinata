@@ -14,7 +14,7 @@ GameObject:
   - component: {fileID: 7208503008039608508}
   - component: {fileID: 7110186578208371675}
   - component: {fileID: 2956111145714806320}
-  m_Layer: 0
+  m_Layer: 8
   m_Name: Candy_Orange
   m_TagString: Untagged
   m_Icon: {fileID: 0}
